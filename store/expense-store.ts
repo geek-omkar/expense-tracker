@@ -1,9 +1,19 @@
-import { create } from 'zustand';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { v4 as uuidv4 } from 'uuid';
-import { Category, Expense, ExpenseFormData } from '@/types/expense';
+import { Category, Expense, ExpenseFormData } from "@/types/expense";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { create } from "zustand";
 
-const STORAGE_KEY = 'expenses_data';
+const STORAGE_KEY = "expenses_data";
+
+/**
+ * Generate a unique ID for expenses
+ * Uses timestamp + random number for uniqueness
+ * Format: timestamp-random (e.g., "1706451234567-12345")
+ */
+function generateId(): string {
+  const timestamp = Date.now();
+  const random = Math.floor(Math.random() * 100000);
+  return `${timestamp}-${random}`;
+}
 
 interface ExpenseState {
   expenses: Expense[];
@@ -28,38 +38,80 @@ export const useExpenseStore = create<ExpenseState>((set, get) => ({
   expenses: [],
   isLoading: false,
   error: null,
-  searchQuery: '',
+  searchQuery: "",
   selectedCategory: null,
 
   loadExpenses: async () => {
     set({ isLoading: true, error: null });
     try {
       const data = await AsyncStorage.getItem(STORAGE_KEY);
-      const expenses: Expense[] = data ? JSON.parse(data) : [];
-      // Sort by date descending
-      expenses.sort(
-        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
-      );
-      set({ expenses, isLoading: false });
-    } catch {
-      set({ error: 'Failed to load expenses', isLoading: false });
+      if (data) {
+        const expenses: Expense[] = JSON.parse(data);
+        // Validate parsed data is an array
+        if (!Array.isArray(expenses)) {
+          throw new Error("Invalid data format in storage");
+        }
+        // Sort by date descending
+        expenses.sort(
+          (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+        );
+        set({ expenses, isLoading: false });
+      } else {
+        set({ expenses: [], isLoading: false });
+      }
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Failed to load expenses";
+      console.error("Error loading expenses:", error);
+      set({ error: errorMessage, isLoading: false });
     }
   },
 
   addExpense: async (data: ExpenseFormData) => {
     set({ error: null });
     try {
+      // Validate data before creating expense
+      if (!data.title || !data.category || !data.date) {
+        throw new Error("Missing required fields");
+      }
+
+      // Validate amount is a valid positive number
+      if (
+        typeof data.amount !== "number" ||
+        isNaN(data.amount) ||
+        data.amount <= 0
+      ) {
+        throw new Error("Amount must be a valid positive number");
+      }
+
+      // Validate date is valid
+      const dateObj = new Date(data.date);
+      if (isNaN(dateObj.getTime())) {
+        throw new Error("Invalid date format");
+      }
+
       const newExpense: Expense = {
         ...data,
-        id: uuidv4(),
+        id: generateId(),
         createdAt: new Date().toISOString(),
       };
+
       const updatedExpenses = [newExpense, ...get().expenses];
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updatedExpenses));
+
+      // Validate JSON serialization before saving
+      const jsonString = JSON.stringify(updatedExpenses);
+      if (!jsonString) {
+        throw new Error("Failed to serialize expense data");
+      }
+
+      await AsyncStorage.setItem(STORAGE_KEY, jsonString);
       set({ expenses: updatedExpenses });
-    } catch {
-      set({ error: 'Failed to save expense' });
-      throw new Error('Failed to save expense');
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Failed to save expense";
+      console.error("Error saving expense:", error);
+      set({ error: errorMessage });
+      throw new Error(errorMessage);
     }
   },
 
@@ -67,10 +119,17 @@ export const useExpenseStore = create<ExpenseState>((set, get) => ({
     set({ error: null });
     try {
       const updatedExpenses = get().expenses.filter((e) => e.id !== id);
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updatedExpenses));
+      const jsonString = JSON.stringify(updatedExpenses);
+      if (!jsonString) {
+        throw new Error("Failed to serialize expense data");
+      }
+      await AsyncStorage.setItem(STORAGE_KEY, jsonString);
       set({ expenses: updatedExpenses });
-    } catch {
-      set({ error: 'Failed to delete expense' });
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Failed to delete expense";
+      console.error("Error deleting expense:", error);
+      set({ error: errorMessage });
     }
   },
 
@@ -88,9 +147,7 @@ export const useExpenseStore = create<ExpenseState>((set, get) => ({
 
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase().trim();
-      filtered = filtered.filter((e) =>
-        e.title.toLowerCase().includes(query)
-      );
+      filtered = filtered.filter((e) => e.title.toLowerCase().includes(query));
     }
 
     if (selectedCategory) {

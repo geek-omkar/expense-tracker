@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import { useExpenseStore } from '@/store/expense-store';
 
 /**
@@ -7,6 +8,7 @@ import { useExpenseStore } from '@/store/expense-store';
  * - Pull-to-refresh
  * - Search & category filter state
  * - Filtered expenses and computed total
+ * - Reloads expenses when screen comes into focus
  *
  * Keeps screen components focused purely on rendering.
  */
@@ -20,16 +22,41 @@ export function useExpenses() {
   const selectedCategory = useExpenseStore((s) => s.selectedCategory);
   const setSearchQuery = useExpenseStore((s) => s.setSearchQuery);
   const loadExpenses = useExpenseStore((s) => s.loadExpenses);
-  const getFilteredExpenses = useExpenseStore((s) => s.getFilteredExpenses);
-  const getTotal = useExpenseStore((s) => s.getTotal);
 
-  const filteredExpenses = getFilteredExpenses();
-  const total = getTotal();
+  // Calculate filtered expenses reactively
+  const filteredExpenses = useMemo(() => {
+    let filtered = expenses;
+
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase().trim();
+      filtered = filtered.filter((e) =>
+        e.title.toLowerCase().includes(query)
+      );
+    }
+
+    if (selectedCategory) {
+      filtered = filtered.filter((e) => e.category === selectedCategory);
+    }
+
+    return filtered;
+  }, [expenses, searchQuery, selectedCategory]);
+
+  // Calculate total reactively
+  const total = useMemo(() => {
+    return filteredExpenses.reduce((sum, e) => sum + e.amount, 0);
+  }, [filteredExpenses]);
 
   // Load expenses on mount
   useEffect(() => {
     loadExpenses();
   }, [loadExpenses]);
+
+  // Reload expenses when screen comes into focus (e.g., after adding an expense)
+  useFocusEffect(
+    useCallback(() => {
+      loadExpenses();
+    }, [loadExpenses])
+  );
 
   // Pull-to-refresh handler
   const onRefresh = useCallback(async () => {

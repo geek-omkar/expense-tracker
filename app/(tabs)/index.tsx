@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   FlatList,
   RefreshControl,
@@ -32,7 +32,21 @@ export default function ExpenseListScreen() {
     onRefresh,
   } = useExpenses();
 
-  const renderHeader = () => (
+  // Local state for search input to ensure immediate updates
+  const [localSearchQuery, setLocalSearchQuery] = useState(searchQuery);
+
+  // Sync local state with store state
+  useEffect(() => {
+    setLocalSearchQuery(searchQuery);
+  }, [searchQuery]);
+
+  // Handle search input change
+  const handleSearchChange = useCallback((text: string) => {
+    setLocalSearchQuery(text);
+    setSearchQuery(text);
+  }, [setSearchQuery]);
+
+  const renderHeader = useCallback(() => (
     <View>
       {/* Total Card */}
       <View style={styles.totalCard}>
@@ -52,17 +66,18 @@ export default function ExpenseListScreen() {
           style={styles.searchInput}
           placeholder="Search expenses..."
           placeholderTextColor="#8e8e93"
-          value={searchQuery}
-          onChangeText={setSearchQuery}
+          value={localSearchQuery}
+          onChangeText={handleSearchChange}
           returnKeyType="search"
           clearButtonMode="while-editing"
+          autoCorrect={false}
         />
       </View>
 
       {/* Category Filter */}
       <CategoryFilter />
     </View>
-  );
+  ), [localSearchQuery, selectedCategory, total, filteredExpenses.length, handleSearchChange]);
 
   if (isInitialLoading) {
     return (
